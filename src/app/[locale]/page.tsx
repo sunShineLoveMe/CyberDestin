@@ -55,16 +55,18 @@ export default function Home() {
       </header>
 
       {/* 3D Scene Container */}
-      <div className="absolute inset-0 z-10">
-        <TarotShuffle 
-          onDraw={handleDraw}
-          cardImage="/UI/card_back.png"
-          particleColor="#82eaff"
-        />
+      <div className="absolute inset-0 z-20 pointer-events-none">
+        <div className="w-full h-full pointer-events-auto">
+          <TarotShuffle 
+            onDraw={handleDraw}
+            cardImage="/UI/card_back.png"
+            particleColor="#82eaff"
+          />
+        </div>
       </div>
 
       {/* UI Controls */}
-      <div className="relative z-40 flex flex-col items-center mt-[40vh]">
+      <div className="relative z-50 flex flex-col items-center mt-[40vh]">
         {showButton && (
           <button
             onClick={handleReveal}
