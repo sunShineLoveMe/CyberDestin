@@ -16,14 +16,17 @@ export default function Home() {
   const [reading, setReading] = useState<ReadingResult | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [showButton, setShowButton] = useState(true);
+  const [showSlots, setShowSlots] = useState(false);
 
   const handleReveal = () => {
     setShowButton(false);
+    setShowSlots(true);
     // Trigger the shuffle animation via custom event
     window.dispatchEvent(new Event('trigger-shuffle'));
   };
 
   const handleDraw = useCallback(async (drawnCards: DrawnCard[]) => {
+    setShowSlots(false);
     setIsReading(true);
     try {
       const result = await getLoveReading(drawnCards);
@@ -64,6 +67,22 @@ export default function Home() {
           />
         </div>
       </div>
+
+      {/* Card Slots (Visual Guide) */}
+      {showSlots && (
+        <div className="fixed bottom-[10vh] left-0 right-0 z-10 flex justify-center gap-[5vw] pointer-events-none">
+          {[0, 1, 2].map((slot) => (
+            <div
+              key={slot}
+              className="w-[200px] h-[340px] rounded-xl border-2 border-dashed border-cyan-tech/30 bg-black/20 flex items-center justify-center backdrop-blur-sm transition-all duration-500"
+            >
+              <span className="text-cyan-tech/50 text-sm font-orbitron tracking-widest">
+                {slot === 0 ? 'PAST' : slot === 1 ? 'PRESENT' : 'FUTURE'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* UI Controls */}
       <div className="relative z-50 flex flex-col items-center mt-[40vh]">

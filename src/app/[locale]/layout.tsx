@@ -1,32 +1,15 @@
 import type { Metadata } from "next";
-import { Orbitron, Rajdhani, Inter, Roboto } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
 import { getMessages } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { routing } from "@/i18n/routing";
 import "../globals.css";
 
-const orbitron = Orbitron({
-  variable: "--font-orbitron",
-  subsets: ["latin"],
-});
-
-const rajdhani = Rajdhani({
-  variable: "--font-rajdhani",
-  weight: ["300", "400", "500", "600", "700"],
-  subsets: ["latin"],
-});
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
-
-const roboto = Roboto({
-  variable: "--font-roboto",
-  weight: ["100", "300", "400", "500", "700", "900"],
-  subsets: ["latin"],
-});
+// Fonts temporarily disabled due to network issues
+const orbitron = { variable: "font-orbitron" };
+const rajdhani = { variable: "font-rajdhani" };
+const inter = { variable: "font-inter" };
+const roboto = { variable: "font-roboto" };
 
 export const metadata: Metadata = {
   title: "CyberDestin RO",

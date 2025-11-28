@@ -33,6 +33,99 @@ A futuristic AI-powered Love Tarot divination web app built with Next.js, featur
 - **深度适中**：足够提供有价值的洞察，又不会让咨询者感到困惑
 - **传统认可**：在塔罗界被公认为最有效的基础牌阵之一
 
+### 交互式抽卡流程（已实现）
+
+1. **洗牌启动** ✅
+   - 点击"REVEAL YOUR LOVE DESTINY"按钮触发洗牌动画
+   
+2. **洗牌动效** ✅
+   - 卡牌从中心位置散开成圆形
+   - 随机旋转和位移，模拟真实洗牌效果
+   - 持续约 1.1 秒
+   
+3. **球体形成** ✅
+   - 78张卡牌使用**斐波那契球体算法**均匀分布
+   - 在页面上方组成半径700px的3D中空球体
+   - 每张卡牌朝向球心外侧，确保背面可见
+   - 形成动画持续 1.5 秒，使用二次缓动
+   
+4. **球体旋转** ✅
+   - 球体自动绕Y轴旋转（速度：0.003 rad/frame）
+   - 同时在X轴上轻微摆动，增加动态感
+   - 旋转过程中持续检测中心卡牌
+   
+5. **中心高亮** ✅
+   - 实时计算每张卡牌投影到屏幕中心的距离
+   - 最接近中心且在前方的卡牌自动高亮
+   - 高亮效果：白色边框 + 强烈发光阴影 + 1.1倍缩放
+   - 高亮判定阈值：NDC距离 < 0.2
+   
+6. **交互选择** ✅
+   - 用户点击高亮的中心卡牌进行选择
+   - 非高亮卡牌点击无效，防止误触
+   - 选中后卡牌从球体组中移除，停止旋转
+   
+7. **卡牌归位** ✅
+   - 选中的卡牌保持世界坐标系位置
+   - 飞向页面下方预留槽位（过去/现在/未来）
+   - 槽位间距：350px，Y坐标：-500px，Z坐标：800px
+   - 同时翻转卡牌显示正面，根据正逆位旋转
+   - 归位动画：1秒，使用Back.Out缓动
+   
+8. **流程循环** ✅
+   - 自动进入下一轮选择，直到选满3张
+   - 剩余卡牌继续旋转，中心检测持续更新
+   
+9. **结果揭晓** ✅
+   - 第3张牌归位后，触发AI解读流程
+   - 魔法阵和粒子效果淡出
+   - 剩余卡牌透明度降为0
+   - 1.5秒后调用`onDraw`回调，传递选中的3张牌数据
+
+### 技术实现细节
+
+#### 斐波那契球体算法
+
+```typescript
+function createSphereLayout(count: number, radius: number) {
+  const positions = [];
+  const phi = Math.PI * (3 - Math.sqrt(5)); // 黄金角度
+  
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i / (count - 1)) * 2; // y 从 1 到 -1
+    const radiusAtY = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    
+    const x = Math.cos(theta) * radiusAtY * radius;
+    const z = Math.sin(theta) * radiusAtY * radius;
+    positions.push({ x, y: y * radius, z });
+  }
+  
+  return positions;
+}
+```
+
+- **优势**：均匀分布，无极点聚集
+- **应用**：78张卡牌完美覆盖球面
+
+#### 中心卡牌检测
+
+```typescript
+// 1. 获取卡牌世界坐标
+card.getWorldPosition(worldPos);
+
+// 2. 投影到屏幕空间（NDC）
+const screenPos = worldPos.clone().project(camera);
+
+// 3. 计算到屏幕中心(0,0)的距离
+const distance = screenCenter.distanceTo(new THREE.Vector2(screenPos.x, screenPos.y));
+
+// 4. 筛选：在前方 && 距离最小
+if (worldPos.z > 0 && distance < minDistance) {
+  closestCard = card;
+}
+```
+
 ### 项目中的抽卡实现逻辑
 
 #### 1. 随机抽取机制
