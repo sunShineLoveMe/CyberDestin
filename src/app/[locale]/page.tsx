@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useTranslations } from "next-intl";
+import { useState, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { LanguageSwitch } from "@/components/UI";
 import { getLoveReading, ReadingResult, DrawnCard } from "@/components/Deck3D/AIReader";
@@ -11,22 +10,26 @@ const TarotShuffle = dynamic(() => import("@/components/Deck3D/TarotShuffle"), {
   ssr: false,
 });
 
+type GamePhase =
+  | "idle"
+  | "shuffling"
+  | "sphere"
+  | "selecting"
+  | "reading"
+  | "result";
+
 export default function Home() {
-  const t = useTranslations("Index");
   const [reading, setReading] = useState<ReadingResult | null>(null);
   const [isReading, setIsReading] = useState(false);
-  const [showButton, setShowButton] = useState(true);
-  const [showSlots, setShowSlots] = useState(false);
+  const [gamePhase, setGamePhase] = useState<GamePhase>("idle");
 
   const handleReveal = () => {
-    setShowButton(false);
-    setShowSlots(true);
+    setGamePhase("shuffling");
     // Trigger the shuffle animation via custom event
     window.dispatchEvent(new Event('trigger-shuffle'));
   };
 
   const handleDraw = useCallback(async (drawnCards: DrawnCard[]) => {
-    setShowSlots(false);
     setIsReading(true);
     try {
       const result = await getLoveReading(drawnCards);
@@ -35,8 +38,23 @@ export default function Home() {
       console.error("Failed to get reading:", error);
     } finally {
       setIsReading(false);
+      setGamePhase("result");
     }
   }, []);
+
+  const handlePhaseChange = useCallback((phase: GamePhase) => {
+    setGamePhase(phase);
+  }, []);
+
+  const showSlots = useMemo(
+    () => ["selecting", "reading", "result"].includes(gamePhase),
+    [gamePhase]
+  );
+
+  const showButton = useMemo(
+    () => ["idle", "result"].includes(gamePhase),
+    [gamePhase]
+  );
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden flex flex-col items-center justify-center">
@@ -60,24 +78,25 @@ export default function Home() {
       {/* 3D Scene Container */}
       <div className="absolute inset-0 z-20 pointer-events-none">
         <div className="w-full h-full pointer-events-auto">
-          <TarotShuffle 
+          <TarotShuffle
             onDraw={handleDraw}
             cardImage="/UI/card_back.png"
             particleColor="#82eaff"
+            onPhaseChange={handlePhaseChange}
           />
         </div>
       </div>
 
       {/* Card Slots (Visual Guide) */}
       {showSlots && (
-        <div className="fixed bottom-[10vh] left-0 right-0 z-10 flex justify-center gap-[5vw] pointer-events-none">
+        <div className="fixed bottom-20 left-0 right-0 z-30 flex justify-center gap-8">
           {[0, 1, 2].map((slot) => (
             <div
               key={slot}
-              className="w-[200px] h-[340px] rounded-xl border-2 border-dashed border-cyan-tech/30 bg-black/20 flex items-center justify-center backdrop-blur-sm transition-all duration-500"
+              className="w-[200px] h-[340px] rounded-xl border-2 border-dashed border-cyan-tech/30 bg-black/20 flex items-center justify-center"
             >
-              <span className="text-cyan-tech/50 text-sm font-orbitron tracking-widest">
-                {slot === 0 ? 'PAST' : slot === 1 ? 'PRESENT' : 'FUTURE'}
+              <span className="text-cyan-tech/50 text-sm">
+                {slot === 0 ? '过去' : slot === 1 ? '现在' : '未来'}
               </span>
             </div>
           ))}
