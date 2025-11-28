@@ -14,9 +14,16 @@ interface TarotShuffleProps {
   particleColor?: string;
   shuffleDuration?: number;
   onDraw?: (cards: DrawnCard[]) => void;
+  onPhaseChange?: (phase: GamePhase) => void;
 }
 
-type GamePhase = 'idle' | 'shuffling' | 'sphere' | 'selecting' | 'result';
+type GamePhase =
+  | 'idle'
+  | 'shuffling'
+  | 'sphere'
+  | 'selecting'
+  | 'reading'
+  | 'result';
 
 export default function TarotShuffle({
   cardImage = "/UI/card_back.png",
@@ -37,10 +44,28 @@ export default function TarotShuffle({
   const centerCardRef = useRef<CSS3DObject | null>(null);
   const sphereGroupRef = useRef<THREE.Group>(new THREE.Group());
   const currentSlotRef = useRef<number>(0);
+  const phaseChangeRef = useRef<TarotShuffleProps['onPhaseChange']>();
+
+  useEffect(() => {
+    phaseChangeRef.current = onPhaseChange;
+  }, [onPhaseChange]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (!containerRef.current || !rendererContainerRef.current) return;
+
+    const setPhase = (phase: GamePhase) => {
+      phaseRef.current = phase;
+      if (phase === 'idle') {
+        currentSlotRef.current = 0;
+        selectedCardsRef.current = [];
+      }
+      if (phase !== 'selecting' && centerCardRef.current) {
+        centerCardRef.current.element.classList.remove('center-highlight');
+        centerCardRef.current = null;
+      }
+      phaseChangeRef.current?.(phase);
+    };
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -80,10 +105,11 @@ export default function TarotShuffle({
       // Initial position: center, stacked
       card.position.set(0, 0, -i * 3);
       card.rotation.set(0, 0, 0);
-      
+
       // Add click listener to card element
       const element = card.element;
       element.style.cursor = 'pointer';
+      element.style.willChange = 'transform';
       element.onclick = () => handleCardClick(card);
       
       sphereGroupRef.current.add(card); // Add to group initially
@@ -336,23 +362,26 @@ export default function TarotShuffle({
       // Slot positions (screen bottom)
       // Slot 0: Left, Slot 1: Center, Slot 2: Right
       // Y should be low (-600 or so)
-      const slotX = (currentSlotRef.current - 1) * 350; // Tighter spacing
-      const slotY = -500; // Lower part of screen
-      const slotZ = 800; // Closer to camera for visibility
+      const slotPositions = [
+        { x: -400, y: -600, z: 200 },
+        { x: 0, y: -600, z: 200 },
+        { x: 400, y: -600, z: 200 }
+      ];
+      const targetSlot = slotPositions[Math.min(currentSlotRef.current, slotPositions.length - 1)];
       
       new TWEEN.Tween(card.position)
-        .to({ x: slotX, y: slotY, z: slotZ }, 1000)
+        .to(targetSlot, 1000)
         .easing(TWEEN.Easing.Back.Out)
         .start();
         
       new TWEEN.Tween(card.rotation)
-        .to({ x: 0, y: Math.PI, z: isUpright ? 0 : Math.PI }, 1000) // Flip to front
+        .to({ x: 0, y: Math.PI, z: isUpright ? 0 : Math.PI }, 1000)
         .start();
-        
+
       currentSlotRef.current++;
-      
+
       if (currentSlotRef.current >= 3) {
-        phaseRef.current = 'result';
+        setPhase('reading');
         if (onDraw) {
           setTimeout(() => onDraw(selectedCardsRef.current), 1500);
         }
@@ -375,7 +404,7 @@ export default function TarotShuffle({
     const handleStartShuffle = () => {
       if (isShufflingRef.current) return;
       isShufflingRef.current = true;
-      phaseRef.current = 'shuffling';
+      setPhase('shuffling');
 
       // 1. Effects
       new TWEEN.Tween(circleMaterial.uniforms.uOpacity).to({ value: 0.9 }, 800).start();
@@ -406,7 +435,7 @@ export default function TarotShuffle({
 
       // 3. Form Sphere - cards arrange into hollow sphere at top of screen
       setTimeout(() => {
-        phaseRef.current = 'sphere';
+        setPhase('sphere');
         const sphereRadius = 700; // Larger radius for better visibility
         const sphereYOffset = 300; // Position sphere at top of screen
         const spherePositions = createSphereLayout(availableCardsRef.current.length, sphereRadius);
@@ -420,7 +449,7 @@ export default function TarotShuffle({
             .easing(TWEEN.Easing.Quadratic.Out)
             .onComplete(() => {
                if (i === availableCardsRef.current.length - 1) {
-                 phaseRef.current = 'selecting';
+                 setPhase('selecting');
                }
             })
             .start();
