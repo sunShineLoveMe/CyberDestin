@@ -120,6 +120,25 @@ export default function TarotShuffle({
     
     const magicCircle = new THREE.Mesh(circleGeometry, circleMaterial);
     magicCircle.position.set(0, 0, -300); // Behind cards
+    
+    // Responsive scaling based on viewport aspect ratio
+    const updateMagicCircleScale = () => {
+      const aspect = window.innerWidth / window.innerHeight;
+      // For portrait (narrow) screens, scale down to fit
+      // For landscape screens, keep at 1.0
+      if (aspect < 0.8) {
+        // Very narrow (mobile portrait)
+        magicCircle.scale.set(aspect * 1.2, aspect * 1.2, 1);
+      } else if (aspect < 1.2) {
+        // Moderate aspect ratio
+        magicCircle.scale.set(aspect * 0.9, aspect * 0.9, 1);
+      } else {
+        // Wide screens
+        magicCircle.scale.set(1, 1, 1);
+      }
+    };
+    updateMagicCircleScale();
+    
     scene.add(magicCircle);
 
     // --- Particles (WebGL) ---
@@ -348,6 +367,16 @@ export default function TarotShuffle({
       
       webglRenderer.setSize(w, h);
       cssRenderer.setSize(w, h);
+      
+      // Update magic circle scale for new aspect ratio
+      const aspect = w / h;
+      if (aspect < 0.8) {
+        magicCircle.scale.set(aspect * 1.2, aspect * 1.2, 1);
+      } else if (aspect < 1.2) {
+        magicCircle.scale.set(aspect * 0.9, aspect * 0.9, 1);
+      } else {
+        magicCircle.scale.set(1, 1, 1);
+      }
     };
     window.addEventListener('resize', handleResize);
 
