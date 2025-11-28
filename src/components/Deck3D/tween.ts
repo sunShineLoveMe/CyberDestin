@@ -23,6 +23,7 @@ export class Tween {
   }
 
   start(time?: number) {
+    add(this); // Add to global tweens list
     for (const property in this.valuesEnd) {
       this.valuesStart[property] = parseFloat(this.object[property]);
     }
@@ -114,6 +115,16 @@ export const Easing = {
       return 0.5 * (-Math.pow(2, -10 * (k - 1)) + 2);
     },
   },
+  Back: {
+    Out: (k: number) => {
+      const s = 1.70158;
+      return --k * k * ((s + 1) * k + s) + 1;
+    },
+    In: (k: number) => {
+      const s = 1.70158;
+      return k * k * ((s + 1) * k - s);
+    }
+  }
 };
 
 const _tweens: Tween[] = [];
