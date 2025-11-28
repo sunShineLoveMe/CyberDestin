@@ -1,24 +1,23 @@
 export class Tween {
-  private object: any;
   private valuesStart: any = {};
   private valuesEnd: any = {};
   private duration: number = 1000;
   private delayTime: number = 0;
   private startTime: number | null = null;
-  private easingFunction: (k: number) => number = (k) => k;
+  private easingFunction: (k: number) => number = Easing.Linear.None;
   private onUpdateCallback: ((object: any) => void) | null = null;
-  private onCompleteCallback: ((object: any) => void) | null = null;
+  private onCompleteCallback?: () => void;
   private isPlaying: boolean = false;
+  private isYoyo: boolean = false;
+  private repeatCount: number = 0;
+  private reversed: boolean = false;
+  private originalValues: Record<string, number> = {};
 
-  constructor(object: any) {
-    this.object = object;
-  }
+  constructor(public object: any) {}
 
-  to(values: any, duration: number) {
-    this.valuesEnd = values;
-    if (duration !== undefined) {
-      this.duration = duration;
-    }
+  to(properties: Record<string, number>, duration: number) {
+    this.valuesEnd = properties;
+    this.duration = duration;
     return this;
   }
 
@@ -26,6 +25,8 @@ export class Tween {
     add(this); // Add to global tweens list
     for (const property in this.valuesEnd) {
       this.valuesStart[property] = parseFloat(this.object[property]);
+      // Store original values for yoyo
+      this.originalValues[property] = this.valuesStart[property];
     }
     this.startTime = time !== undefined ? time : performance.now();
     this.startTime += this.delayTime;
@@ -33,8 +34,19 @@ export class Tween {
     return this;
   }
 
+  yoyo(enabled: boolean) {
+    this.isYoyo = enabled;
+    return this;
+  }
+
+  repeat(times: number) {
+    this.repeatCount = times;
+    return this;
+  }
+
   stop() {
     this.isPlaying = false;
+    remove(this);
     return this;
   }
 
@@ -43,8 +55,8 @@ export class Tween {
     return this;
   }
 
-  easing(easing: (k: number) => number) {
-    this.easingFunction = easing;
+  easing(fn: (k: number) => number) {
+    this.easingFunction = fn;
     return this;
   }
 
@@ -53,28 +65,23 @@ export class Tween {
     return this;
   }
 
-  onComplete(callback: (object: any) => void) {
+  onComplete(callback: () => void) {
     this.onCompleteCallback = callback;
     return this;
   }
 
-  update(time: number) {
-    if (!this.isPlaying || this.startTime === null) {
-      return false;
-    }
+  update(time: number): boolean {
+    if (!this.isPlaying) return false;
+    if (this.startTime === null || time < this.startTime) return true;
 
-    if (time < this.startTime) {
-      return true;
-    }
-
-    const elapsed = (time - this.startTime) / this.duration;
-    const value = elapsed > 1 ? 1 : elapsed;
-    const progress = this.easingFunction(value);
+    let elapsed = (time - this.startTime) / this.duration;
+    elapsed = elapsed > 1 ? 1 : elapsed;
+    const value = this.easingFunction(elapsed);
 
     for (const property in this.valuesEnd) {
       const start = this.valuesStart[property];
       const end = this.valuesEnd[property];
-      this.object[property] = start + (end - start) * progress;
+      this.object[property] = start + (end - start) * value;
     }
 
     if (this.onUpdateCallback) {
@@ -82,8 +89,41 @@ export class Tween {
     }
 
     if (elapsed === 1) {
+      if (this.isYoyo && !this.reversed) {
+        // Reverse for yoyo
+        this.reversed = true;
+        const temp = this.valuesStart;
+        this.valuesStart = this.valuesEnd;
+        this.valuesEnd = temp;
+        this.startTime = time;
+        return true;
+      }
+
+      if (this.repeatCount > 0 || this.repeatCount === Infinity) {
+        // Reset for repeat
+        if (this.repeatCount !== Infinity) {
+          this.repeatCount--;
+        }
+
+        if (this.isYoyo && this.reversed) {
+          // After completing a yoyo cycle, reverse back
+          this.reversed = false;
+          const temp = this.valuesStart;
+          this.valuesStart = this.valuesEnd;
+          this.valuesEnd = temp;
+        } else {
+          // Regular repeat - reset to original
+          for (const property in this.valuesEnd) {
+            this.valuesStart[property] = this.originalValues[property];
+          }
+        }
+
+        this.startTime = time;
+        return true;
+      }
+
       if (this.onCompleteCallback) {
-        this.onCompleteCallback(this.object);
+        this.onCompleteCallback();
       }
       this.isPlaying = false;
       return false;
@@ -116,15 +156,32 @@ export const Easing = {
     },
   },
   Back: {
+    In: (k: number) => {
+      const s = 1.70158;
+      return k * k * ((s + 1) * k - s);
+    },
     Out: (k: number) => {
       const s = 1.70158;
       return --k * k * ((s + 1) * k + s) + 1;
     },
+    InOut: (k: number) => {
+      const s = 1.70158 * 1.525;
+      if ((k *= 2) < 1) return 0.5 * (k * k * ((s + 1) * k - s));
+      return 0.5 * ((k -= 2) * k * ((s + 1) * k + s) + 2);
+    },
+  },
+  
+  Sinusoidal: {
     In: (k: number) => {
-      const s = 1.70158;
-      return k * k * ((s + 1) * k - s);
-    }
-  }
+      return 1 - Math.cos((k * Math.PI) / 2);
+    },
+    Out: (k: number) => {
+      return Math.sin((k * Math.PI) / 2);
+    },
+    InOut: (k: number) => {
+      return 0.5 * (1 - Math.cos(Math.PI * k));
+    },
+  },
 };
 
 const _tweens: Tween[] = [];

@@ -79,7 +79,7 @@ export default function TarotShuffle({
       uniforms: {
         uTime: { value: 0 },
         uColor: { value: new THREE.Color(particleColor) },
-        uOpacity: { value: 0.0 }
+        uOpacity: { value: 0.15 } // Start with subtle glow instead of 0
       },
       vertexShader: `
         varying vec2 vUv;
@@ -143,12 +143,34 @@ export default function TarotShuffle({
       color: particleColor,
       size: 4,
       transparent: true,
-      opacity: 0.0,
+      opacity: 0.3, // Start visible with subtle opacity
       blending: THREE.AdditiveBlending,
     });
     
     const particles = new THREE.Points(particleGeo, particleMat);
     scene.add(particles);
+
+    // Breathing animation for particles in idle state
+    const breatheParticles = () => {
+      new TWEEN.Tween(particleMat)
+        .to({ opacity: 0.5 }, 2000)
+        .easing(TWEEN.Easing.Sinusoidal.InOut)
+        .yoyo(true)
+        .repeat(Infinity)
+        .start();
+    };
+    breatheParticles();
+
+    // Breathing animation for magic circle in idle state
+    const breatheCircle = () => {
+      new TWEEN.Tween(circleMaterial.uniforms.uOpacity)
+        .to({ value: 0.25 }, 3000)
+        .easing(TWEEN.Easing.Sinusoidal.InOut)
+        .yoyo(true)
+        .repeat(Infinity)
+        .start();
+    };
+    breatheCircle();
 
     // --- Initial Animation: Cards fly in from bottom ---
     cards.forEach((card, i) => {
@@ -160,6 +182,21 @@ export default function TarotShuffle({
         .to({ x: 0, y: 0, z: -i * 3 }, 1200)
         .delay(i * 3)
         .easing(TWEEN.Easing.Back.Out)
+        .onComplete(() => {
+          // After landing, add gentle floating animation
+          const floatAnimation = () => {
+            new TWEEN.Tween(card.position)
+              .to({ 
+                y: Math.sin(i * 0.5) * 10, // Slight vertical movement
+                z: -i * 3 + Math.cos(i * 0.3) * 5 // Slight depth movement
+              }, 3000 + i * 100)
+              .easing(TWEEN.Easing.Sinusoidal.InOut)
+              .yoyo(true)
+              .repeat(Infinity)
+              .start();
+          };
+          floatAnimation();
+        })
         .start();
     });
 

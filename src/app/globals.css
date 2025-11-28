@@ -80,3 +80,17 @@ body {
 .css3d-card:hover .card-back {
   box-shadow: 0 0 25px rgba(76, 201, 240, 0.8);
 }
+
+/* Ambient Glow Animation for Idle State */
+@keyframes cardGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(0, 245, 212, 0.4), 0 0 30px rgba(123, 44, 191, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(0, 245, 212, 0.6), 0 0 45px rgba(123, 44, 191, 0.4);
+  }
+}
+
+.card-face {
+  animation: cardGlow 3s ease-in-out infinite;
+}
