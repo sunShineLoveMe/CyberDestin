@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-const MAX_DAILY_READINGS = 3;
+const MAX_DAILY_READINGS = 9999; // Unlimited for testing
 const STORAGE_KEY = "cyber_destin_limit";
 
 interface DailyLimitState {
@@ -55,7 +55,7 @@ export function useDailyLimit() {
     
     const left = MAX_DAILY_READINGS - newCount;
     setReadingsLeft(left);
-    setIsBlocked(left <= 0);
+    setIsBlocked(false); // Always allow for testing
   };
 
   return { readingsLeft, isBlocked, incrementReading };

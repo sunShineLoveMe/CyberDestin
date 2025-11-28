@@ -1,11 +1,15 @@
 "use client";
 
 import { useTranslations, useLocale } from "next-intl";
+import dynamic from "next/dynamic";
 import { LanguageSwitch, ReadingResult } from "@/components/UI";
-import { Scene as Deck3D } from "@/components/Deck3D";
 import { useGameStore } from "@/store/useGameStore";
 import { useDailyLimit } from "@/hooks/useDailyLimit";
 import { tarotData } from "@/data/tarot_data";
+
+const TarotShuffle = dynamic(() => import("@/components/Deck3D/TarotShuffle"), {
+  ssr: false,
+});
 
 export default function Home() {
   const t = useTranslations("Index");
@@ -53,7 +57,11 @@ export default function Home() {
       </div>
 
       <div className="w-full h-[60vh] z-0">
-        <Deck3D onShuffleComplete={handleShuffleComplete} />
+        <TarotShuffle 
+          cardCount={22}
+          phase={phase}
+          onComplete={handleShuffleComplete}
+        />
       </div>
 
       <div className="z-10 mt-8">

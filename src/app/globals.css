@@ -3,12 +3,12 @@
 @theme {
   --color-deep-space-black: #050505;
   --color-neon-purple: #7b2cbf;
-  --color-cyan-tech: #00f5d4;
+  --color-cyan-tech: #4cc9f0;
   --color-hot-pink: #f72585;
 
-  --font-orbitron: var(--font-orbitron);
-  --font-rajdhani: var(--font-rajdhani);
-  --font-inter: var(--font-inter);
+  --font-orbitron: Orbitron, sans-serif;
+  --font-rajdhani: Rajdhani, sans-serif;
+  --font-inter: Inter, sans-serif;
   --font-roboto: var(--font-roboto);
 
   --background-image-nebula-fog: radial-gradient(circle at 50% 50%, rgba(123, 44, 191, 0.1) 0%, rgba(5, 5, 5, 1) 70%);
