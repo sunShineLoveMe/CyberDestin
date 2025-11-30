@@ -67,6 +67,12 @@ export function createCSS3DCard(imageUrl: string = "/UI/card_back.png", index: n
   inner.appendChild(back);
 
   const object = new CSS3DObject(div);
+  
+  // Accessibility attributes
+  div.setAttribute('role', 'button');
+  div.setAttribute('aria-label', 'Tarot card - click to select when highlighted');
+  div.setAttribute('tabindex', '0');
+  
   // Store reference to inner div for flipping
   (object as any).elementInner = inner;
   

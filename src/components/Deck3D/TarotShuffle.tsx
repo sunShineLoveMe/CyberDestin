@@ -31,6 +31,7 @@ export default function TarotShuffle({
   particleColor = "#82eaff",
   shuffleDuration = 2800,
   onDraw,
+  onPhaseChange,
 }: TarotShuffleProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererContainerRef = useRef<HTMLDivElement>(null);
@@ -44,7 +45,8 @@ export default function TarotShuffle({
   const centerCardRef = useRef<CSS3DObject | null>(null);
   const sphereGroupRef = useRef<THREE.Group>(new THREE.Group());
   const currentSlotRef = useRef<number>(0);
-  const phaseChangeRef = useRef<TarotShuffleProps['onPhaseChange']>();
+  const phaseChangeRef = useRef<TarotShuffleProps['onPhaseChange']>(undefined);
+  const idleTweensRef = useRef<any[]>([]); // Store idle tweens to stop them later
 
   useEffect(() => {
     phaseChangeRef.current = onPhaseChange;
@@ -175,7 +177,8 @@ export default function TarotShuffle({
     scene.add(magicCircle);
 
     // --- Particles ---
-    const particleCount = 500;
+    // Responsive particle count for better mobile performance
+    const particleCount = width < 768 ? 250 : 500;
     const particleGeo = new THREE.BufferGeometry();
     const particlePos = new Float32Array(particleCount * 3);
     for (let i = 0; i < particleCount; i++) {
@@ -230,7 +233,7 @@ export default function TarotShuffle({
         .easing(TWEEN.Easing.Back.Out)
         .onComplete(() => {
           // Idle float
-          new TWEEN.Tween(card.position)
+          const tween = new TWEEN.Tween(card.position)
             .to({ 
               y: Math.sin(i * 0.5) * 10,
               z: -i * 3 + Math.cos(i * 0.3) * 5 
@@ -239,76 +242,74 @@ export default function TarotShuffle({
             .yoyo(true)
             .repeat(Infinity)
             .start();
+          idleTweensRef.current.push(tween);
         })
         .start();
     });
 
     // --- Helper Functions ---
 
-    const createSphereLayout = (count: number, radius: number) => {
-      const positions: Array<{x: number, y: number, z: number}> = [];
-      const phi = Math.PI * (3 - Math.sqrt(5));
+    const createCircleLayout = (count: number, radius: number) => {
+      const positions: Array<{x: number, y: number, z: number, rotation: number}> = [];
+      const angleStep = (Math.PI * 2) / count;
+      
       for (let i = 0; i < count; i++) {
-        const y = 1 - (i / (count - 1)) * 2;
-        const radiusAtY = Math.sqrt(1 - y * y);
-        const theta = phi * i;
-        const x = Math.cos(theta) * radiusAtY * radius;
-        const z = Math.sin(theta) * radiusAtY * radius;
-        positions.push({ x: x, y: y * radius, z: z });
+        const angle = angleStep * i;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const z = 0; // All cards on the same plane
+        
+        positions.push({ x, y, z, rotation: angle });
       }
+      
       return positions;
     };
 
     const findCenterCard = () => {
       if (phaseRef.current !== 'selecting') return;
       
-      const screenCenter = new THREE.Vector2(0, 0);
-      let closestCard: CSS3DObject | null = null;
-      let minDistance = Infinity;
+      // For 2D circle, find the card closest to the top position (angle = -90 degrees in screen space)
+      // The circle rotates around Z axis, so we need to find which card is currently at the top
+      const circleRotation = sphereGroupRef.current.rotation.z;
+      const cardCount = availableCardsRef.current.length;
+      const angleStep = (Math.PI * 2) / 78; // Original card count for angle calculation
       
-      // We need to check distance to screen center (0,0) in NDC
-      // But simpler: check distance to camera lookAt vector in world space?
-      // No, screen projection is best.
-
-      availableCardsRef.current.forEach(card => {
-        // Get world position
-        const worldPos = new THREE.Vector3();
-        card.getWorldPosition(worldPos);
+      // Find which card index is currently at the top (90 degrees = -PI/2 in our coordinate system)
+      // We want the card pointing upward (negative Y direction in screen space)
+      const targetAngle = -Math.PI / 2; // Top position
+      const normalizedRotation = ((circleRotation % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
+      
+      let closestCard: CSS3DObject | null = null;
+      let minAngleDiff = Infinity;
+      
+      availableCardsRef.current.forEach((card, idx) => {
+        // Calculate this card's current angle
+        const cardIndex = cardsRef.current.indexOf(card);
+        const cardBaseAngle = angleStep * cardIndex;
+        const cardCurrentAngle = cardBaseAngle + normalizedRotation;
+        const normalizedCardAngle = ((cardCurrentAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
         
-        // Project to screen
-        const screenPos = worldPos.clone().project(camera);
+        // Calculate angular distance to target position
+        let angleDiff = Math.abs(normalizedCardAngle - (targetAngle + Math.PI * 2));
+        angleDiff = Math.min(angleDiff, Math.abs(normalizedCardAngle - targetAngle));
+        angleDiff = Math.min(angleDiff, Math.abs(normalizedCardAngle - (targetAngle - Math.PI * 2)));
         
-        // Calculate distance to center (0,0)
-        const distance = screenCenter.distanceTo(new THREE.Vector2(screenPos.x, screenPos.y));
-        
-        // Check if card is in front (z < 1 in NDC) and visible
-        // Also check if it's "facing" the camera roughly?
-        // For sphere, cards on back side should be ignored.
-        // World Z should be positive (closer to camera) relative to sphere center?
-        // Sphere center is (0, 200, 0). Camera is (0, 0, 2000).
-        // Cards with larger Z are closer to camera.
-        
-        if (worldPos.z > 0 && distance < minDistance) {
-          minDistance = distance;
+        if (angleDiff < minAngleDiff) {
+          minAngleDiff = angleDiff;
           closestCard = card;
         }
       });
 
       // Update highlight
+      const ANGLE_THRESHOLD = 0.15; // About 8.6 degrees
+      
       if (centerCardRef.current !== closestCard) {
         if (centerCardRef.current) {
           centerCardRef.current.element.classList.remove('center-highlight');
         }
-        if (closestCard) {
-          // Only highlight if it's reasonably close to center
-          // NDC coordinates are -1 to 1. 0.15 is a good threshold.
-          // Convert minDistance (which is in NDC 0-sqrt(2)) to check
-          if (minDistance < 0.2) {
-             (closestCard as any).element.classList.add('center-highlight');
-             centerCardRef.current = closestCard;
-          } else {
-             centerCardRef.current = null;
-          }
+        if (closestCard && minAngleDiff < ANGLE_THRESHOLD) {
+          (closestCard as any).element.classList.add('center-highlight');
+          centerCardRef.current = closestCard;
         } else {
           centerCardRef.current = null;
         }
@@ -337,16 +338,17 @@ export default function TarotShuffle({
       centerCardRef.current = null;
       
       // 3. Move to slot
-      // Remove from sphere group and add to scene directly to stop rotation
-      // IMPORTANT: Get world transform before reparenting
+      // Get world transform before reparenting
       const worldPos = new THREE.Vector3();
       const worldQuat = new THREE.Quaternion();
       card.getWorldPosition(worldPos);
       card.getWorldQuaternion(worldQuat);
       
+      // Remove from sphere group and add to scene directly to stop rotation
       sphereGroupRef.current.remove(card);
       scene.add(card);
       
+      // Set world position and rotation
       card.position.copy(worldPos);
       card.quaternion.copy(worldQuat);
       
@@ -359,14 +361,25 @@ export default function TarotShuffle({
       selectedCardsRef.current.push({ card: randomTarot, isUpright });
       (card as any).setCardData(randomTarot.name, randomTarot.image_front);
       
-      // Slot positions (screen bottom)
-      // Slot 0: Left, Slot 1: Center, Slot 2: Right
-      // Y should be low (-600 or so)
+      // Calculate responsive slot positions based on viewport
+      // Convert screen positions to 3D world positions
+      const aspect = width / height;
+      const vFOV = THREE.MathUtils.degToRad(camera.fov);
+      const distanceToCamera = 2000; // Camera is at z=2000
+      const viewHeight = 2 * Math.tan(vFOV / 2) * distanceToCamera;
+      const viewWidth = viewHeight * aspect;
+      
+      // Position slots at bottom of screen
+      const slotY = -viewHeight * 0.35; // 35% from bottom
+      const slotZ = 500; // Closer to camera than sphere
+      const slotSpacing = Math.min(viewWidth * 0.15, 450); // Responsive spacing
+      
       const slotPositions = [
-        { x: -400, y: -600, z: 200 },
-        { x: 0, y: -600, z: 200 },
-        { x: 400, y: -600, z: 200 }
+        { x: -slotSpacing, y: slotY, z: slotZ },  // Left - Past
+        { x: 0, y: slotY, z: slotZ },              // Center - Present  
+        { x: slotSpacing, y: slotY, z: slotZ }     // Right - Future
       ];
+      
       const targetSlot = slotPositions[Math.min(currentSlotRef.current, slotPositions.length - 1)];
       
       new TWEEN.Tween(card.position)
@@ -412,8 +425,9 @@ export default function TarotShuffle({
 
       // 2. Scatter - cards fly outward in a circle
       cards.forEach((card, i) => {
-        // Stop idle animation
-        TWEEN.remove(card.position as any); 
+        // Stop idle animations
+        idleTweensRef.current.forEach(t => t.stop());
+        idleTweensRef.current = [];
         
         const angle = (i / cardCount) * Math.PI * 2;
         const radius = 600 + Math.random() * 200;
@@ -433,19 +447,26 @@ export default function TarotShuffle({
           .start();
       });
 
-      // 3. Form Sphere - cards arrange into hollow sphere at top of screen
+      // 3. Form Circle - cards arrange into a 2D circle at upper screen
       setTimeout(() => {
-        setPhase('sphere');
-        const sphereRadius = 700; // Larger radius for better visibility
-        const sphereYOffset = 300; // Position sphere at top of screen
-        const spherePositions = createSphereLayout(availableCardsRef.current.length, sphereRadius);
+        setPhase('sphere'); // Keep phase name for compatibility
+        
+        // Responsive circle sizing
+        const isMobile = width < 768;
+        const circleRadius = isMobile ? 350 : 550;
+        const circleYOffset = isMobile ? 150 : 100; // Position in upper screen area
+        
+        // Position the circle group in upper screen area
+        sphereGroupRef.current.position.set(0, circleYOffset, 0);
+        
+        const circlePositions = createCircleLayout(availableCardsRef.current.length, circleRadius);
         
         availableCardsRef.current.forEach((card, i) => {
-          const pos = spherePositions[i];
+          const pos = circlePositions[i];
           
-          // Animate to sphere position (add Y offset to move sphere up)
+          // Animate to circle position RELATIVE to circle group
           new TWEEN.Tween(card.position)
-            .to({ x: pos.x, y: pos.y + sphereYOffset, z: pos.z }, 1500)
+            .to({ x: pos.x, y: pos.y, z: pos.z }, 1500)
             .easing(TWEEN.Easing.Quadratic.Out)
             .onComplete(() => {
                if (i === availableCardsRef.current.length - 1) {
@@ -454,24 +475,13 @@ export default function TarotShuffle({
             })
             .start();
             
-          // Calculate rotation to face center of sphere (which is at y=sphereYOffset)
-          const cardWorldPos = new THREE.Vector3(pos.x, pos.y + sphereYOffset, pos.z);
-          const sphereCenter = new THREE.Vector3(0, sphereYOffset, 0);
-          
-          // Create a temporary object to calculate the correct rotation
-          const tempObj = new THREE.Object3D();
-          tempObj.position.copy(cardWorldPos);
-          tempObj.lookAt(sphereCenter);
-          
-          // Rotate 180 degrees on Y so the back faces outward
-          tempObj.rotateY(Math.PI);
-          
+          // Rotate to face outward (wheel spoke)
+          // pos.rotation is the angle on circle.
+          // We want card bottom to point to center.
+          // Standard card is vertical.
+          // Rotation Z = angle - PI/2
           new TWEEN.Tween(card.rotation)
-            .to({ 
-              x: tempObj.rotation.x, 
-              y: tempObj.rotation.y, 
-              z: tempObj.rotation.z 
-            }, 1500)
+            .to({ x: 0, y: 0, z: pos.rotation - Math.PI / 2 }, 1500)
             .easing(TWEEN.Easing.Quadratic.Out)
             .start();
         });
@@ -494,10 +504,12 @@ export default function TarotShuffle({
       circleMaterial.uniforms.uTime.value = time;
       particles.rotation.y = time * 0.1;
 
-      // Sphere Rotation
+      // Circle Rotation (Z-axis, counterclockwise)
       if (phaseRef.current === 'sphere' || phaseRef.current === 'selecting') {
-        sphereGroupRef.current.rotation.y += 0.003; // Slightly faster
-        sphereGroupRef.current.rotation.x = Math.sin(time * 0.3) * 0.1; // Gentle tilt
+        // Counterclockwise rotation: positive Z rotation
+        // Speed: ~12 degrees per second = 0.21 radians/second
+        // At 60fps: 0.21 / 60 ≈ 0.0035 radians per frame
+        sphereGroupRef.current.rotation.z += 0.0035;
       }
 
       // Center Detection

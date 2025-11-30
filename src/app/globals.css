@@ -37,6 +37,7 @@ body {
   perspective: 1000px;
   pointer-events: auto;
   will-change: transform;
+  transform: translateZ(0); /* Force GPU layer for better performance */
 }
 
 .css3d-card-inner {
@@ -113,6 +114,7 @@ body {
 .center-highlight {
   z-index: 100 !important;
   animation: centerGlow 1s ease-in-out infinite;
+  will-change: transform, box-shadow; /* Optimize animation performance */
 }
 
 .center-highlight .card-back {
