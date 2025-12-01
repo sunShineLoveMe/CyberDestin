@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { CSS3DRenderer, CSS3DObject } from "./css3dRenderer";
 import { createCSS3DCard } from "./CSS3DCard";
 import * as TWEEN from "./tween";
 import { TAROT_DECK } from "./TarotDeck";
 import { DrawnCard } from "./AIReader";
+import { getLoveReading, LoveReadingResult } from "./LoveReadingService";
 
 interface TarotShuffleProps {
   cardImage?: string;
@@ -47,6 +48,7 @@ export default function TarotShuffle({
   const currentSlotRef = useRef<number>(0);
   const phaseChangeRef = useRef<TarotShuffleProps['onPhaseChange']>(undefined);
   const idleTweensRef = useRef<any[]>([]); // Store idle tweens to stop them later
+  const [readingResult, setReadingResult] = useState<LoveReadingResult | null>(null);
 
   useEffect(() => {
     phaseChangeRef.current = onPhaseChange;
@@ -249,84 +251,62 @@ export default function TarotShuffle({
 
     // --- Helper Functions ---
 
-    const createCircleLayout = (count: number, radius: number) => {
-      const positions: Array<{x: number, y: number, z: number, rotation: number}> = [];
-      const angleStep = (Math.PI * 2) / count;
-      
+    const createSphereLayout = (count: number, radius: number) => {
+      const positions: Array<{x: number, y: number, z: number, rotation: {x: number, y: number, z: number}}> = [];
+      const phi = Math.PI * (3 - Math.sqrt(5)); // Golden angle
+
       for (let i = 0; i < count; i++) {
-        const angle = angleStep * i;
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-        const z = 0; // All cards on the same plane
+        const y = 1 - (i / (count - 1)) * 2; // y goes from 1 to -1
+        const radiusAtY = Math.sqrt(1 - y * y); // Radius at y
+        const theta = phi * i; // Golden angle increment
+
+        const x = Math.cos(theta) * radiusAtY;
+        const z = Math.sin(theta) * radiusAtY;
+
+        // Scale by radius
+        const pX = x * radius;
+        const pY = y * radius;
+        const pZ = z * radius;
+
+        // Rotation: Face center
+        // Look at center (0,0,0) from (pX, pY, pZ)
+        // We can use a dummy object to calculate rotation
+        const dummy = new THREE.Object3D();
+        dummy.position.set(pX, pY, pZ);
+        dummy.lookAt(0, 0, 0);
         
-        positions.push({ x, y, z, rotation: angle });
+        positions.push({ 
+          x: pX, y: pY, z: pZ, 
+          rotation: { x: dummy.rotation.x, y: dummy.rotation.y, z: dummy.rotation.z } 
+        });
       }
       
       return positions;
     };
 
     const findCenterCard = () => {
-      if (phaseRef.current !== 'selecting') return;
+      // In Sphere layout, finding the "center" card is complex because of 3D rotation.
+      // For now, we allow clicking ANY card in the sphere, as per requirements "User can click arbitrary card".
+      // We can add a raycaster-like logic if needed, but CSS3D handles clicks natively.
+      // So we might not strictly need to highlight a "center" card for selection if we allow free selection.
+      // However, to keep the "Ceremonial" feel, we can highlight the card closest to the camera (Z > something).
       
-      // For 2D circle, find the card closest to the top position (angle = -90 degrees in screen space)
-      // The circle rotates around Z axis, so we need to find which card is currently at the top
-      const circleRotation = sphereGroupRef.current.rotation.z;
-      const cardCount = availableCardsRef.current.length;
-      const angleStep = (Math.PI * 2) / 78; // Original card count for angle calculation
-      
-      // Find which card index is currently at the top (90 degrees = -PI/2 in our coordinate system)
-      // We want the card pointing upward (negative Y direction in screen space)
-      const targetAngle = -Math.PI / 2; // Top position
-      const normalizedRotation = ((circleRotation % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-      
-      let closestCard: CSS3DObject | null = null;
-      let minAngleDiff = Infinity;
-      
-      availableCardsRef.current.forEach((card, idx) => {
-        // Calculate this card's current angle
-        const cardIndex = cardsRef.current.indexOf(card);
-        const cardBaseAngle = angleStep * cardIndex;
-        const cardCurrentAngle = cardBaseAngle + normalizedRotation;
-        const normalizedCardAngle = ((cardCurrentAngle % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2);
-        
-        // Calculate angular distance to target position
-        let angleDiff = Math.abs(normalizedCardAngle - (targetAngle + Math.PI * 2));
-        angleDiff = Math.min(angleDiff, Math.abs(normalizedCardAngle - targetAngle));
-        angleDiff = Math.min(angleDiff, Math.abs(normalizedCardAngle - (targetAngle - Math.PI * 2)));
-        
-        if (angleDiff < minAngleDiff) {
-          minAngleDiff = angleDiff;
-          closestCard = card;
-        }
-      });
-
-      // Update highlight
-      const ANGLE_THRESHOLD = 0.15; // About 8.6 degrees
-      
-      if (centerCardRef.current !== closestCard) {
-        if (centerCardRef.current) {
-          centerCardRef.current.element.classList.remove('center-highlight');
-        }
-        if (closestCard && minAngleDiff < ANGLE_THRESHOLD) {
-          (closestCard as any).element.classList.add('center-highlight');
-          centerCardRef.current = closestCard;
-        } else {
-          centerCardRef.current = null;
-        }
-      }
+      // Simplified: Just highlight card under mouse (handled by CSS hover).
+      // If we really want to highlight the one "facing" the user:
+      // We can check dot product of card forward vector and camera forward vector.
     };
 
     const handleCardClick = (clickedCard: CSS3DObject) => {
       if (phaseRef.current !== 'selecting') return;
       
-      // Only allow clicking the highlighted center card
-      if (clickedCard !== centerCardRef.current) return;
+      // Allow clicking any card in Sphere mode
+      // if (clickedCard !== centerCardRef.current) return;
       
       // Select this card
       selectCard(clickedCard);
     };
 
-    const selectCard = (card: CSS3DObject) => {
+    const selectCard = async (card: CSS3DObject) => {
       // 1. Remove from available
       const index = availableCardsRef.current.indexOf(card);
       if (index > -1) {
@@ -337,7 +317,7 @@ export default function TarotShuffle({
       card.element.classList.remove('center-highlight');
       centerCardRef.current = null;
       
-      // 3. Move to slot
+      // 3. Move to Center
       // Get world transform before reparenting
       const worldPos = new THREE.Vector3();
       const worldQuat = new THREE.Quaternion();
@@ -361,57 +341,40 @@ export default function TarotShuffle({
       selectedCardsRef.current.push({ card: randomTarot, isUpright });
       (card as any).setCardData(randomTarot.name, randomTarot.image_front);
       
-      // Calculate responsive slot positions based on viewport
-      // Convert screen positions to 3D world positions
-      const aspect = width / height;
-      const vFOV = THREE.MathUtils.degToRad(camera.fov);
-      const distanceToCamera = 2000; // Camera is at z=2000
-      const viewHeight = 2 * Math.tan(vFOV / 2) * distanceToCamera;
-      const viewWidth = viewHeight * aspect;
-      
-      // Position slots at bottom of screen
-      const slotY = -viewHeight * 0.35; // 35% from bottom
-      const slotZ = 500; // Closer to camera than sphere
-      const slotSpacing = Math.min(viewWidth * 0.15, 450); // Responsive spacing
-      
-      const slotPositions = [
-        { x: -slotSpacing, y: slotY, z: slotZ },  // Left - Past
-        { x: 0, y: slotY, z: slotZ },              // Center - Present  
-        { x: slotSpacing, y: slotY, z: slotZ }     // Right - Future
-      ];
-      
-      const targetSlot = slotPositions[Math.min(currentSlotRef.current, slotPositions.length - 1)];
+      // Animate to Center
+      const targetPos = { x: 0, y: 0, z: 500 }; // Center, close to camera
       
       new TWEEN.Tween(card.position)
-        .to(targetSlot, 1000)
-        .easing(TWEEN.Easing.Back.Out)
+        .to(targetPos, 1500)
+        .easing(TWEEN.Easing.Exponential.Out)
         .start();
         
+      // Flip to show front
+      // Rotate 180 deg around Y axis relative to current, but ensure it faces camera upright
       new TWEEN.Tween(card.rotation)
-        .to({ x: 0, y: Math.PI, z: isUpright ? 0 : Math.PI }, 1000)
+        .to({ x: 0, y: Math.PI, z: isUpright ? 0 : Math.PI }, 1500)
+        .easing(TWEEN.Easing.Exponential.Out)
+        .onComplete(() => {
+           setPhase('reading');
+           // Trigger AI Reading
+           getLoveReading(randomTarot.name, isUpright).then(result => {
+             setReadingResult(result);
+           });
+        })
         .start();
 
-      currentSlotRef.current++;
-
-      if (currentSlotRef.current >= 3) {
-        setPhase('reading');
-        if (onDraw) {
-          setTimeout(() => onDraw(selectedCardsRef.current), 1500);
-        }
-        
-        // Fade out effects
-        new TWEEN.Tween(circleMaterial.uniforms.uOpacity)
-          .to({ value: 0 }, 1000).start();
-        new TWEEN.Tween(particleMat)
-          .to({ opacity: 0 }, 1000).start();
-          
-        // Fade out remaining cards
-        availableCardsRef.current.forEach(c => {
-           new TWEEN.Tween(c.element.style)
-             .to({ opacity: 0 }, 1000)
-             .start();
-        });
-      }
+      // Fade out other cards
+      availableCardsRef.current.forEach(c => {
+         new TWEEN.Tween(c.element.style)
+           .to({ opacity: 0 }, 1000)
+           .start();
+      });
+      
+      // Fade out effects
+      new TWEEN.Tween(circleMaterial.uniforms.uOpacity)
+        .to({ value: 0 }, 1000).start();
+      new TWEEN.Tween(particleMat)
+        .to({ opacity: 0 }, 1000).start();
     };
 
     const handleStartShuffle = () => {
@@ -447,27 +410,26 @@ export default function TarotShuffle({
           .start();
       });
 
-      // 3. Form Circle - cards arrange into a 2D circle at upper screen
+      // 3. Form Sphere - cards arrange into a 3D sphere
       setTimeout(() => {
-        setPhase('sphere'); // Keep phase name for compatibility
+        setPhase('sphere'); 
         
-        // Responsive circle sizing
+        // Responsive sphere sizing
         const isMobile = width < 768;
-        const circleRadius = isMobile ? 350 : 550;
-        const circleYOffset = isMobile ? 150 : 100; // Position in upper screen area
+        const sphereRadius = isMobile ? 400 : 600;
         
-        // Position the circle group in upper screen area
-        sphereGroupRef.current.position.set(0, circleYOffset, 0);
+        // Position the sphere group in center
+        sphereGroupRef.current.position.set(0, 0, 0);
         
-        const circlePositions = createCircleLayout(availableCardsRef.current.length, circleRadius);
+        const spherePositions = createSphereLayout(availableCardsRef.current.length, sphereRadius);
         
         availableCardsRef.current.forEach((card, i) => {
-          const pos = circlePositions[i];
+          const pos = spherePositions[i];
           
-          // Animate to circle position RELATIVE to circle group
+          // Animate to sphere position RELATIVE to sphere group
           new TWEEN.Tween(card.position)
-            .to({ x: pos.x, y: pos.y, z: pos.z }, 1500)
-            .easing(TWEEN.Easing.Quadratic.Out)
+            .to({ x: pos.x, y: pos.y, z: pos.z }, 2000)
+            .easing(TWEEN.Easing.Exponential.Out)
             .onComplete(() => {
                if (i === availableCardsRef.current.length - 1) {
                  setPhase('selecting');
@@ -475,14 +437,10 @@ export default function TarotShuffle({
             })
             .start();
             
-          // Rotate to face outward (wheel spoke)
-          // pos.rotation is the angle on circle.
-          // We want card bottom to point to center.
-          // Standard card is vertical.
-          // Rotation Z = angle - PI/2
+          // Rotate to face center
           new TWEEN.Tween(card.rotation)
-            .to({ x: 0, y: 0, z: pos.rotation - Math.PI / 2 }, 1500)
-            .easing(TWEEN.Easing.Quadratic.Out)
+            .to({ x: pos.rotation.x, y: pos.rotation.y, z: pos.rotation.z }, 2000)
+            .easing(TWEEN.Easing.Exponential.Out)
             .start();
         });
       }, shuffleDuration * 0.5);
@@ -504,12 +462,10 @@ export default function TarotShuffle({
       circleMaterial.uniforms.uTime.value = time;
       particles.rotation.y = time * 0.1;
 
-      // Circle Rotation (Z-axis, counterclockwise)
+      // Sphere Rotation (Y-axis and X-axis for 3D feel)
       if (phaseRef.current === 'sphere' || phaseRef.current === 'selecting') {
-        // Counterclockwise rotation: positive Z rotation
-        // Speed: ~12 degrees per second = 0.21 radians/second
-        // At 60fps: 0.21 / 60 ≈ 0.0035 radians per frame
-        sphereGroupRef.current.rotation.z += 0.0035;
+        sphereGroupRef.current.rotation.y += 0.002;
+        sphereGroupRef.current.rotation.x = Math.sin(time * 0.2) * 0.1;
       }
 
       // Center Detection
@@ -547,8 +503,42 @@ export default function TarotShuffle({
   }, [cardImage, cardCount, particleColor, shuffleDuration, onDraw]);
 
   return (
-    <div ref={containerRef} className="fixed inset-0 w-full h-full overflow-hidden">
+    <div ref={containerRef} className="fixed inset-0 w-full h-full overflow-hidden bg-black">
+      {/* Background Fallback */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#1a1a2e_0%,_#000000_100%)] z-0" />
+      
       <div ref={rendererContainerRef} className="absolute inset-0" />
+      
+      {/* Reading Result Overlay */}
+      {readingResult && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/80 border border-cyan-500/50 p-8 rounded-xl max-w-md text-center backdrop-blur-md pointer-events-auto animate-in fade-in zoom-in duration-500">
+            <h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 mb-2">
+              {readingResult.cardName}
+            </h2>
+            <p className="text-cyan-300 mb-4 italic">{readingResult.uprightOrReversed}</p>
+            
+            <div className="space-y-4 text-left">
+              <div>
+                <h3 className="text-purple-400 font-semibold text-sm uppercase tracking-wider">Love Meaning</h3>
+                <p className="text-gray-200 leading-relaxed">{readingResult.loveMeaning}</p>
+              </div>
+              
+              <div>
+                <h3 className="text-cyan-400 font-semibold text-sm uppercase tracking-wider">Advice</h3>
+                <p className="text-gray-200 leading-relaxed">{readingResult.advice}</p>
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => window.location.reload()} 
+              className="mt-8 px-6 py-2 bg-gradient-to-r from-cyan-600 to-purple-600 rounded-full text-white font-semibold hover:scale-105 transition-transform"
+            >
+              Draw Again
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
